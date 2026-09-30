@@ -45,7 +45,20 @@ VERIFIED_IDENTITIES = {
             "Gareth Carr as Founder & Director."
         ),
     },
-
+    "Aeon Films": {
+        "name": "Lindsey Veasey",
+        "role": "Filmmaker / Video Producer",
+        "linkedin": "https://au.linkedin.com/in/lindsey-veasey-343009b4",
+        "source": "Aeon Films website + public LinkedIn",
+        "confidence": "MEDIUM",
+        "evidence": (
+            "Aeon Films' website repeatedly identifies Lindsey Veasey "
+            "as filming and editing Aeon Films projects and refers to "
+            "Lindsey and his team. His public LinkedIn lists Aeon Films. "
+            "No reliable source was found explicitly identifying him "
+            "as founder, owner, or director."
+        ),
+    },
     "All Angles Video": {
         "name": "Danny Vandine",
         "role": "Director / Videographer",
