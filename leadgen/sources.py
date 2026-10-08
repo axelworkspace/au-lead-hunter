@@ -170,6 +170,8 @@ def osm_collect(bbox, osm_tags: list[str], log=print) -> list[dict]:
             "lon": el.get("lon") or (el.get("center") or {}).get("lon"),
             "source": "osm",
             "source_url": f"https://www.openstreetmap.org/{el['type']}/{el['id']}",
+            # Preserve service/studio context for vertical-specific relevance.
+            "osm_tags": dict(tags),
         })
     log(f"  OSM: {len(out)} named businesses")
     return out

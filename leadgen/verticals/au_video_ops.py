@@ -1,269 +1,145 @@
+"""Australian video/content businesses for editing and project support.
+
+OSM filters are literal key=value strings (ORed), never raw Overpass syntax.
+Selected office types and studios provide discovery coverage; the relevance gate
+keeps only video categories or specific business-name context.
 """
-Australian video-production operations lead vertical.
-
-Version 0.2
-
-Goal:
-Find Australian businesses that are genuinely relevant to:
-- videography
-- video production
-- film production
-- audio/video production
-- real-estate media
-- selected media agencies
-
-Potential services:
-- client follow-ups
-- CRM/admin
-- customer support
-- project coordination
-- QA
-- operations support
-"""
-
 from __future__ import annotations
 
-from .. import register, Vertical
-from ._common import audit_enrich
+import re
+from html import unescape
 
+from .. import Vertical, register
+from ..audit import fetch
+from ..signals import detect_socials, find_emails
 
-# Strong Overture categories.
 CORE_CATEGORIES = {
-    "videographer",
-    "video_film_production",
-    "audio_visual_production_and_design",
+    "videographer", "video_film_production", "audio_visual_production_and_design",
+    "film_production", "video_production", "film",
 }
-
-# Potentially relevant, but need stronger business-name evidence.
 SECONDARY_CATEGORIES = {
-    "broadcasting_media_production",
-    "media_agency",
-    "real_estate_photography",
-    "event_photography",
+    "broadcasting_media_production", "media_agency", "real_estate_photography",
+    "event_photography", "advertising_agency", "photographer", "photography", "studio",
 }
-
-# Categories that produced obvious false positives in the Sydney test.
 EXCLUDED_CATEGORIES = {
-    "video_game_store",
-    "video_game_critic",
-    "video_and_video_game_rentals",
-    "music_production",
-    "music_production_services",
-    "theatrical_productions",
-    "books_mags_music_and_video",
-    "media_news_company",
-    "media_news_website",
-    "mass_media",
-    "print_media",
-    "photography_store_and_services",
-    "session_photography",
-    "photography_classes",
-    "media_restoration_service",
-    "mediator",
-    "media_critic",
-    "social_media_agency",
-    "social_media_company",
+    "video", "video_games", "video_game_store", "video_game_critic", "cinema",
+    "music_production", "theatrical_productions", "print_media", "mass_media",
+    "photography_classes", "electronics", "camera", "copyshop",
 }
-
-# Strong words that indicate the business itself is likely video-related.
-STRONG_VIDEO_NAME_TERMS = (
-    "video",
-    "videographer",
-    "videography",
-    "film",
-    "filmmaker",
-    "filmmaking",
-    "cinematography",
-    "cinematographer",
-    "video production",
-    "film production",
+VIDEO_NAME = re.compile(
+    r"\b(?:videos?|videograph(?:er|ers|y)|films?|filmmak(?:er|ers|ing)|"
+    r"cinematograph(?:er|ers|y))\b|"
+    r"\b(?:video|film|media|commercial|corporate|content|creative) production(?:s)?\b|"
+    r"\bproduction (?:house|studios?)\b|"
+    r"\b(?:content|creative|podcast|video) (?:studios?|agenc(?:y|ies))\b|"
+    r"\breal estate (?:media|video)\b", re.I,
+)
+EXCLUDED_NAME = re.compile(
+    r"\b(?:video games?|video rentals?|dvd|cinema tickets?|photography classes|"
+    r"self photo studio|photo booth)\b|"
+    r"^(?:stage|sound ?stage|building)\s*(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b",
+    re.I,
 )
 
-
-def _normalise(value: object) -> str:
-    return str(value or "").strip().lower()
-
-
-def _score(rec: dict) -> tuple[int, str, str]:
-    score = 0
-    reasons = []
-
-    name = _normalise(rec.get("name"))
-    category = _normalise(rec.get("category"))
-
-    # ---------------------------------------------------------
-    # 1. Hard exclusion
-    # ---------------------------------------------------------
-    if category in EXCLUDED_CATEGORIES:
-        return (
-            0,
-            "C",
-            f"excluded category: {category}",
-        )
-
-    # ---------------------------------------------------------
-    # 2. Core category
-    # ---------------------------------------------------------
-    if category in CORE_CATEGORIES:
-        score += 55
-        reasons.append(f"core category: {category}")
-
-    # ---------------------------------------------------------
-    # 3. Secondary category
-    # ---------------------------------------------------------
-    elif category in SECONDARY_CATEGORIES:
-        score += 25
-        reasons.append(f"secondary category: {category}")
-
-    else:
-        reasons.append("no strong video category")
-
-    # ---------------------------------------------------------
-    # 4. Strong business-name evidence
-    # ---------------------------------------------------------
-    matched_name_terms = [
-        term
-        for term in STRONG_VIDEO_NAME_TERMS
-        if term in name
-    ]
-
-    if matched_name_terms:
-        score += 25
-        reasons.append(
-            "video-related business name: "
-            + ", ".join(matched_name_terms[:3])
-        )
-
-    # ---------------------------------------------------------
-    # 5. Contactability
-    # ---------------------------------------------------------
-    if rec.get("website"):
-        score += 5
-        reasons.append("website listed")
-
-    if rec.get("phone"):
-        score += 3
-        reasons.append("phone listed")
-
-    if rec.get("email"):
-        score += 2
-        reasons.append("email listed")
-
-    # ---------------------------------------------------------
-    # 6. Website reachability
-    # ---------------------------------------------------------
-    audit = rec.get("audit") or {}
-
-    if audit.get("reachable"):
-        score += 5
-        reasons.append("website reachable")
-
-    score = min(score, 100)
-
-    # ---------------------------------------------------------
-    # 7. Tier
-    # ---------------------------------------------------------
-    if score >= 70:
-        tier = "A"
-    elif score >= 50:
-        tier = "B"
-    elif score >= 25:
-        tier = "C"
-    else:
-        tier = "C"
-
-    return score, tier, "; ".join(reasons)
-
-
-def _opener(rec: dict) -> str:
-    name = rec.get("name") or "your business"
-    category = _normalise(rec.get("category"))
-
-    if category == "real_estate_photography":
-        return (
-            f"{name} may be a fit for remote client follow-ups, "
-            "project coordination, QA and admin support."
-        )
-
-    if category == "event_photography":
-        return (
-            f"{name} may be a fit for client communication, "
-            "project tracking, QA and customer support."
-        )
-
-    if category == "media_agency":
-        return (
-            f"{name} may be a fit for client coordination, "
-            "CRM/admin, project follow-up and operations support."
-        )
-
-    return (
-        f"{name} may be a fit for remote client follow-ups, "
-        "CRM/admin, project coordination, QA and operations support."
-    )
-
-
-COLUMNS = [
-    ("Tier", "tier"),
-    ("Score", "score"),
-    ("Business", "name"),
-    ("Category", "category"),
-    ("City", "city"),
-    ("State", "state"),
-    ("Phone", "phone"),
-    ("Email", "email"),
-    ("Website", "website"),
-    ("Why a Lead", "why"),
-    ("Pitch Angle", "opener"),
-    ("Address", "address"),
-    ("Source", "source"),
-    ("Source URL", "source_url"),
+# Literal office values avoid querying every office across large metro bboxes.
+# amenity=studio also finds generic recording studios; these require video or
+# podcast context rather than being accepted as video businesses automatically.
+OSM_TAGS = [
+    "office=company", "office=film", "office=media",
+    "craft=videographer", "craft=photographer", "shop=photography",
+    "office=film_production", "office=video_production", "office=advertising_agency",
+    "studio=video", "studio=film", "studio=television", "amenity=studio",
 ]
 
 
-register(
-    Vertical(
-        key="au_video_ops",
-        label="Australian video-production operations leads",
-        description=(
-            "Finds Australian video and production businesses that may fit "
-            "remote client-support and operations services."
-        ),
+def is_relevant(rec: dict) -> bool:
+    name = rec.get("name") or ""
+    category = (rec.get("category") or "").lower().replace(" ", "_")
+    tags = rec.get("osm_tags") or {}
+    if category in EXCLUDED_CATEGORIES or EXCLUDED_NAME.search(name):
+        return False
+    studios = {v.strip() for v in tags.get("studio", "").split(";")}
+    if category in CORE_CATEGORIES or studios & {"video", "film", "television"}:
+        return True
+    if studios & {"art", "creative", "dance"}:
+        return False
+    context = " ".join([name, tags.get("description", "")])
+    if VIDEO_NAME.search(context):
+        return True
+    return (category in {"photographer", "advertising_agency"}
+            and bool(re.search(r"\bproductions?\b", name, re.I)))
 
-        # Keep first-pass discovery narrow.
-        # We'll add broader sources later after quality is proven.
-        overture_categories=[
-            "videographer",
-            "video_film_production",
-            "audio_visual_production_and_design",
-            "broadcasting_media_production",
-            "media_agency",
-            "real_estate_photography",
-            "event_photography",
-        ],
 
-        # We intentionally test Overture first.
-        # OSM can be added later with tighter tags.
-        osm_tags=[],
+def lead_status(rec: dict) -> str:
+    site = bool((rec.get("website") or "").strip())
+    email = bool((rec.get("email") or "").strip())
+    phone = bool((rec.get("phone") or "").strip())
+    if site and email and phone:
+        return "HOT"
+    if site and (email or phone):
+        return "WARM"
+    if site:
+        return "COLD"
+    return "UNKNOWN"
 
-        keep_chains=False,
 
-        score_fn=_score,
-        enrich_fn=audit_enrich,
-        opener_fn=_opener,
+def _enrich(rec: dict, ctx: dict) -> dict:
+    """Visit the homepage once; retain listed contacts even if it fails."""
+    site = rec.get("website") or ""
+    if not site:
+        return rec
+    if ctx.get("demo_html"):
+        html = ctx["demo_html"](rec)
+    else:
+        response = fetch(site)
+        if response is None or response.status_code >= 400:
+            rec["enrich_error"] = "Homepage unavailable; listed contacts retained"
+            return rec
+        html = response.text
+    html = unescape(html or "")
+    if not rec.get("email"):
+        emails = find_emails(html)
+        if emails:
+            rec["email"] = emails[0]
+    if not rec.get("phone"):
+        match = re.search(r'href\s*=\s*[\"\']tel:([^\"\'<>]+)', html, re.I)
+        if match:
+            rec["phone"] = match.group(1).split("?", 1)[0].strip()
+    for network, handle in detect_socials(html).items():
+        if handle and not rec.get(network):
+            rec[network] = f"https://{network}.com/{handle}"
+    return rec
 
-        config={
-            "target_country": "Australia",
-            "service_focus": [
-                "client follow-ups",
-                "CRM updates",
-                "customer support",
-                "project coordination",
-                "QA",
-                "operations support",
-            ],
-        },
 
-        columns=COLUMNS,
-    )
-)
+def _score(rec: dict) -> tuple[int, str, str]:
+    status = lead_status(rec)
+    rec["lead_status"] = status
+    rec["vertical"] = "au_video_ops"
+    score, tier = {"HOT": (80, "A"), "WARM": (60, "B"),
+                   "COLD": (30, "C"), "UNKNOWN": (10, "C")}[status]
+    notes = f"{status}: listed contact availability; hiring intent unknown"
+    if rec.get("enrich_error"):
+        notes += f"; {rec['enrich_error']}"
+    return score, tier, notes
+
+
+MASTER_COLUMNS = [
+    ("Business", "name"), ("Contact Name", "contact_name"), ("Role", "role"),
+    ("City", "city"), ("State", "state"), ("Website", "website"),
+    ("Email", "email"), ("Phone", "phone"), ("LinkedIn", "linkedin"),
+    ("Address", "address"), ("Category", "category"), ("Vertical", "vertical"),
+    ("Source", "source"), ("Source URL", "source_url"), ("Lead Status", "lead_status"),
+]
+
+register(Vertical(
+    key="au_video_ops",
+    label="AU video/content businesses for editing and project support",
+    description="Focused video-production prospects with simple contact status; no hiring claim.",
+    overture_categories=sorted(CORE_CATEGORIES | SECONDARY_CATEGORIES),
+    osm_tags=OSM_TAGS,
+    keep_chains=True,
+    filter_fn=is_relevant,
+    enrich_fn=_enrich,
+    score_fn=_score,
+    columns=MASTER_COLUMNS + [("Tier", "tier"), ("Score", "score"), ("Notes", "why")],
+))

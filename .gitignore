@@ -26,6 +26,8 @@ gui/_output/*
 *.xlsx
 *.jsonl
 *.json
+!vercel.json
+.vercel/
 *.parquet
 *.sqlite
 *.vcf

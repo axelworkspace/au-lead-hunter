@@ -1,0 +1,32 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "services": {
+    "app": {
+      "root": ".",
+      "framework": "flask",
+      "entrypoint": "app.py",
+      "functions": {
+        "app.py": { "maxDuration": 300 }
+      }
+    },
+    "gui": {
+      "root": "gui",
+      "framework": "flask",
+      "entrypoint": "vercel_app.py",
+      "functions": {
+        "vercel_app.py": { "maxDuration": 300 }
+      },
+      "bindings": [
+        {
+          "type": "service",
+          "service": "app",
+          "format": "url",
+          "env": "LEADGEN_API_URL"
+        }
+      ]
+    }
+  },
+  "rewrites": [
+    { "source": "/(.*)", "destination": { "service": "gui" } }
+  ]
+}

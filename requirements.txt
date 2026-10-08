@@ -1,5 +1,6 @@
 # Core engine
 requests>=2.31         # HTTP for sources, audit, enrichment
+flask>=3.0            # Vercel API service
 openpyxl>=3.1          # color-tiered XLSX export
 
 # Optional: the Overture (bulk national dataset) source. The OpenStreetMap source

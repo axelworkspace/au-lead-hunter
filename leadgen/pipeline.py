@@ -117,6 +117,10 @@ def run_pipeline(vertical: Vertical, market: str, *,
                 leads += osm_collect(bbox, vertical.osm_tags, log)
             except Exception as e:
                 log(f"  OSM failed: {e}")
+                if set(sources) == {"osm"}:
+                    # A failed sole source is not a successful empty collection.
+                    # Preserve existing exports and report a nonzero CLI result.
+                    raise RuntimeError(f"OSM collection failed: {e}") from e
         if "socrata" in sources:
             try:
                 leads += socrata_collect(label, limit=limit, log=log,
@@ -165,6 +169,11 @@ def run_pipeline(vertical: Vertical, market: str, *,
                     leads += url_csv_collect(cfg["url_csv"], limit=limit, log=log)
                 except Exception as e:
                     log(f"  URL CSV failed: {e}")
+    if vertical.filter_fn:
+        before = len(leads)
+        leads = [r for r in leads if vertical.filter_fn(r)]
+        log(f"  relevance filter: kept {len(leads)} of {before} businesses")
+
     # Drop permanently-closed businesses, then normalize phones (helps dialing +
     # cross-source dedupe identity).
     from .quality import cross_source_dedupe, normalize_phone, is_closed

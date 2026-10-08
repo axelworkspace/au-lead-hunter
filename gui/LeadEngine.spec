@@ -39,7 +39,7 @@ hiddenimports += _safe_submodules("webview")
 # Demo fixtures live in leadgen/tests/fixtures.py (a .py module), so they're
 # already pulled in via collect_submodules above — no separate data files needed.
 # The app ships as a tool only: it bundles no lead data.
-datas = []
+datas = [(os.path.join(GUI, "templates"), "templates")]
 
 block_cipher = None
 

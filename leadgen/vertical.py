@@ -49,6 +49,10 @@ class Vertical:
     # --- output: (header, record_key) in column order ---
     columns: list[tuple[str, str]] = field(default_factory=list)
 
+    # Optional relevance gate, applied before dedupe/enrichment. Other verticals
+    # retain their existing behavior when this is unset.
+    filter_fn: Optional[Callable[[dict], bool]] = None
+
     def score(self, rec: dict) -> tuple[int, str, str]:
         if not self.score_fn:
             raise ValueError(f"vertical '{self.key}' has no score_fn")
